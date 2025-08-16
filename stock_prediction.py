@@ -1,165 +1,87 @@
-# streamlit_app.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.graph_objs as go
-from datetime import datetime
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Financial Data Analytics", layout="wide")
+# ---------------------------------------------
+# Sidebar: User Input
+# ---------------------------------------------
+st.sidebar.header("Stock Dashboard Settings")
 
-# ----------------------
-# Title
-# ----------------------
-st.title("📊 Advanced Financial Analytics Dashboard")
-st.markdown("Covers **Phase 1–3** with advanced options: Technical Indicators, Multiple Charts, and Portfolio Insights.")
+# Select stock ticker
+ticker = st.sidebar.text_input("Enter Stock Ticker (e.g., AAPL, MSFT, TSLA)", "AAPL")
 
-# ----------------------
-# Sidebar Inputs
-# ----------------------
-st.sidebar.header("Settings")
-tickers = st.sidebar.multiselect(
-    "Select Stocks",
-    ["AAPL", "MSFT", "TSLA", "JPM", "GS", "RY", "AMZN", "GOOGL"],
-    default=["AAPL", "MSFT", "TSLA"]
-)
+# Date range selection
+end_date = st.sidebar.date_input("End Date", datetime.today())
+start_date = st.sidebar.date_input("Start Date", end_date - timedelta(days=365))
 
-start_date = st.sidebar.date_input("Start Date", datetime(2019, 1, 1))
-end_date = st.sidebar.date_input("End Date", datetime(2024, 12, 31))
+# Interval
+interval = st.sidebar.selectbox("Interval", ["1d", "1wk", "1mo"])
 
-chart_type = st.sidebar.selectbox(
-    "Choose Chart Type",
-    ["Line Chart", "Candlestick Chart", "Moving Averages"]
-)
+# ---------------------------------------------
+# Data Collection
+# ---------------------------------------------
+@st.cache_data
+def load_data(ticker, start, end, interval):
+    df = yf.download(ticker, start=start, end=end, interval=interval)
+    df.reset_index(inplace=True)
+    return df
 
-# ----------------------
-# Fetch Data
-# ----------------------
-if st.sidebar.button("Fetch & Analyze Data"):
-    if len(tickers) == 0:
-        st.warning("⚠️ Please select at least one stock.")
-    else:
-        st.success(f"Fetching data for: {', '.join(tickers)}")
+data = load_data(ticker, start_date, end_date, interval)
 
-        data = yf.download(
-            tickers,
-            start=start_date,
-            end=end_date,
-            interval="1d",
-            group_by="ticker",
-            auto_adjust=False
-        )
+st.title(f"📊 Stock Market Dashboard: {ticker}")
+st.write(f"Showing data for **{ticker}** from {start_date} to {end_date}")
 
-        # Handle multi/single stock case
-        if isinstance(data.columns, pd.MultiIndex):
-            close_data = pd.concat([data[t]['Adj Close'] for t in tickers], axis=1)
-            close_data.columns = tickers
-        else:
-            close_data = data['Adj Close'].to_frame(name=tickers[0])
+# ---------------------------------------------
+# Data Understanding
+# ---------------------------------------------
+st.subheader("Data Overview")
+st.write(data.head())
 
-        returns = close_data.pct_change().dropna()
+st.subheader("Statistical Summary")
+st.write(data.describe())
 
-        # ------------------------------------------------------
-        # Phase 2: Data Understanding
-        # ------------------------------------------------------
-        st.header("🔎 Phase 2: Data Understanding")
-        st.subheader("📊 Summary Statistics (Returns)")
-        st.write(returns.describe())
+# Show raw data option
+if st.checkbox("Show Raw Data"):
+    st.write(data)
 
-        st.subheader("📉 Volatility (Std Dev of Returns)")
-        st.bar_chart(returns.std().sort_values(ascending=False))
+# ---------------------------------------------
+# Data Visualization
+# ---------------------------------------------
+st.subheader("Stock Price Visualization")
 
-        st.subheader("🔗 Correlation Matrix")
-        fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(returns.corr(), annot=True, cmap="coolwarm", ax=ax)
-        st.pyplot(fig)
+# Candlestick Chart
+fig_candle = go.Figure(data=[go.Candlestick(
+    x=data['Date'],
+    open=data['Open'],
+    high=data['High'],
+    low=data['Low'],
+    close=data['Close'],
+    name='Candlestick'
+)])
+fig_candle.update_layout(title=f"{ticker} Candlestick Chart", xaxis_rangeslider_visible=True)
+st.plotly_chart(fig_candle, use_container_width=True)
 
-        # ------------------------------------------------------
-        # Phase 3: Visualization Options
-        # ------------------------------------------------------
-        st.header("📈 Phase 3: Visualization")
+# Line Chart with Options
+chart_type = st.selectbox("Select Line Chart Type", ["Close", "Open", "High", "Low", "Adj Close"])
+fig_line = px.line(data, x="Date", y=chart_type, title=f"{ticker} {chart_type} Price")
+st.plotly_chart(fig_line, use_container_width=True)
 
-        for ticker in tickers:
-            st.subheader(f"📊 {ticker} - {chart_type}")
+# Volume Chart
+fig_vol = px.bar(data, x="Date", y="Volume", title=f"{ticker} Trading Volume")
+st.plotly_chart(fig_vol, use_container_width=True)
 
-            df = data[ticker] if isinstance(data.columns, pd.MultiIndex) else data
+# Moving Average
+st.subheader("Moving Averages")
+ma_window = st.slider("Select Moving Average Window (days)", 5, 50, 20)
+data[f"MA_{ma_window}"] = data['Close'].rolling(ma_window).mean()
+fig_ma = px.line(data, x="Date", y=["Close", f"MA_{ma_window}"], title=f"{ticker} Closing Price with {ma_window}-Day MA")
+st.plotly_chart(fig_ma, use_container_width=True)
 
-            if chart_type == "Line Chart":
-                st.line_chart(df["Adj Close"])
-
-            elif chart_type == "Candlestick Chart":
-                fig = go.Figure(data=[go.Candlestick(
-                    x=df.index,
-                    open=df["Open"], high=df["High"],
-                    low=df["Low"], close=df["Close"]
-                )])
-                fig.update_layout(title=f"Candlestick - {ticker}", xaxis_rangeslider_visible=False)
-                st.plotly_chart(fig, use_container_width=True)
-
-            elif chart_type == "Moving Averages":
-                df["MA50"] = df["Adj Close"].rolling(window=50).mean()
-                df["MA200"] = df["Adj Close"].rolling(window=200).mean()
-
-                fig, ax = plt.subplots(figsize=(10, 6))
-                ax.plot(df.index, df["Adj Close"], label="Adj Close", alpha=0.7)
-                ax.plot(df.index, df["MA50"], label="MA50", linestyle="--")
-                ax.plot(df.index, df["MA200"], label="MA200", linestyle="--")
-                ax.legend()
-                ax.set_title(f"{ticker} with Moving Averages")
-                st.pyplot(fig)
-
-        # ------------------------------------------------------
-        # Extra: Technical Indicators
-        # ------------------------------------------------------
-        st.header("⚡ Technical Indicators")
-
-        for ticker in tickers:
-            df = data[ticker] if isinstance(data.columns, pd.MultiIndex) else data
-            df["Returns"] = df["Adj Close"].pct_change()
-
-            # RSI Calculation
-            delta = df["Adj Close"].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-            rs = gain / loss
-            df["RSI"] = 100 - (100 / (1 + rs))
-
-            st.subheader(f"{ticker} - RSI (Relative Strength Index)")
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(df.index, df["RSI"], label="RSI", color="purple")
-            ax.axhline(70, color="red", linestyle="--")
-            ax.axhline(30, color="green", linestyle="--")
-            ax.set_title(f"{ticker} RSI")
-            st.pyplot(fig)
-
-        # ------------------------------------------------------
-        # Portfolio Analysis (Bonus)
-        # ------------------------------------------------------
-        st.header("💼 Portfolio Insights")
-
-        st.markdown("Compare mean return vs risk (volatility) of selected stocks.")
-        mean_returns = returns.mean() * 252  # Annualized
-        volatilities = returns.std() * np.sqrt(252)
-
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.scatter(volatilities, mean_returns, c="blue", s=100)
-        for i, txt in enumerate(tickers):
-            ax.annotate(txt, (volatilities[i], mean_returns[i]))
-        ax.set_xlabel("Volatility (Risk)")
-        ax.set_ylabel("Expected Return")
-        ax.set_title("Risk vs Return")
-        st.pyplot(fig)
-
-        # ------------------------------------------------------
-        # Download Data
-        # ------------------------------------------------------
-        st.subheader("💾 Download Processed Data")
-        csv = close_data.to_csv().encode("utf-8")
-        st.download_button(
-            label="Download Adjusted Close Prices CSV",
-            data=csv,
-            file_name="enhanced_financial_data.csv",
-            mime="text/csv",
-        )
+# Correlation Heatmap (optional if multiple stocks later)
+if st.checkbox("Show Correlation Heatmap"):
+    corr = data.corr(numeric_only=True)
+    fig_corr = px.imshow(corr, text_auto=True, title="Correlation Heatmap")
+    st.plotly_chart(fig_corr, use_container_width=True)
