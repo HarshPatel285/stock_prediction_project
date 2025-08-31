@@ -1,24 +1,21 @@
 # stock_prediction.py
-# Group 9 — Part 1 (kept) + Part 2 (Phases 4 & 5 added)
-# Single strong hypothesis, one model family (Random Forest), applied per selected ticker
+# Group 9
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 
 # Viz
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 import plotly.express as px
 
 # ML / Stats
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 from scipy.stats import ttest_1samp
 
-# New imports for XGBoost and tuning
+# imports for XGBoost and tuning
 from xgboost import XGBClassifier
 from sklearn.model_selection import RandomizedSearchCV
 from scipy.stats import uniform, randint
@@ -60,7 +57,6 @@ train_ratio = st.sidebar.slider("Train ratio", min_value=0.5, max_value=0.95, va
 @st.cache_data(show_spinner=False)
 def fetch_data(tickers, start, end, interval="1d"):
     data = yf.download(tickers, start=start, end=end, interval=interval, auto_adjust=True, threads=True)
-    # When multiple tickers, yfinance returns multiindex columns; when single, plain columns.
     panels = {}
     if isinstance(data.columns, pd.MultiIndex):
         for t in tickers:
